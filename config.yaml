@@ -1,0 +1,11 @@
+registory: 964246069091.dkr.ecr.us-east-1.amazonaws.com
+images:
+  simulator:
+    repository: simulator
+    tag: abcf2364163d66c53c2bb041a3923430a1311c1a
+  bridge:
+    repository: bridge
+    tag: d20e929aa908235f50de9b9fadbb3e5c79f3d165
+  linetrace_control:
+    repository: linetrace_control
+    tag: a989eca33bd1dc44cc7dc20ed9d48ce3e696e860

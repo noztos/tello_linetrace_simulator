@@ -1,0 +1,75 @@
+name: Test
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'config.yaml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: [self-hosted, Linux, gpu]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install yq
+        run: |
+          wget https://github.com/mikefarah/yq/releases/download/v4.31.1/yq_linux_386 -O ./yq && chmod +x ./yq
+
+      - name: Parse config.yaml
+        run: |
+          DOCKER_REGISTORY=`./yq eval '.registory' config.yaml`
+          SIMULATOR_REPOS=`./yq eval '.images.simulator.repository' config.yaml`
+          SIMULATOR_TAG=`./yq eval '.images.simulator.tag' config.yaml`
+          BRIDGE_REPOS=`./yq eval '.images.bridge.repository' config.yaml`
+          BRIDGE_TAG=`./yq eval '.images.bridge.tag' config.yaml`
+          CONTROLLER_REPOS=`./yq eval '.images.linetrace_control.repository' config.yaml`
+          CONTROLLER_TAG=`./yq eval '.images.linetrace_control.tag' config.yaml`
+          echo DOCKER_REGISTORY=${DOCKER_REGISTORY} >> $GITHUB_ENV
+          echo SIMULATOR_IMAGE=${DOCKER_REGISTORY}/${SIMULATOR_REPOS}:${SIMULATOR_TAG} >> $GITHUB_ENV
+          echo BRIDGE_IMAGE=${DOCKER_REGISTORY}/${BRIDGE_REPOS}:${BRIDGE_TAG} >> $GITHUB_ENV
+          echo CONTROLLER_IMAGE=${DOCKER_REGISTORY}/${CONTROLLER_REPOS}:${CONTROLLER_TAG} >> $GITHUB_ENV
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1-node16
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.DOCKER_REGISTORY }}
+
+      - name: Pull Docker Images
+        run: |
+
+          docker pull ${{ env.SIMULATOR_IMAGE }}
+          docker pull ${{ env.BRIDGE_IMAGE }}
+          docker pull ${{ env.CONTROLLER_IMAGE }}
+
+      - name: Run Test
+        env:
+          SIMULATOR_IMAGE: ${{ env.SIMULATOR_IMAGE }}
+          BRIDGE_IMAGE: ${{ env.BRIDGE_IMAGE }}
+          CONTROLLER_IMAGE: ${{ env.CONTROLLER_IMAGE }}
+        run: |
+          docker-compose up -d
+          sleep 10
+          python3 recording.py start
+          python3 test.py
+          python3 recording.py stop
+          sleep 10
+          docker-compose cp simulator:/home/myuser/Documents/AirSim/ ${{ runner.temp }}/AirSim/
+          docker-compose down
+        working-directory: test
+
+      - name: Upload Recording Data
+        uses: actions/upload-artifact@v3
+        with:
+          name: airsim_recording_data
+          path: ${{ runner.temp }}/AirSim
