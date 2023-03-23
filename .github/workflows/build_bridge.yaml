@@ -6,7 +6,11 @@ on:
       - main
     paths:
       - 'bridge/**'
-  workflow_dispatch:
+    types:
+      - opened
+      - reopend
+      - synchronize
+      - closed
 
 jobs:
   build:
@@ -30,10 +34,27 @@ jobs:
         with:
           registry: 964246069091.dkr.ecr.us-east-1.amazonaws.com
 
+      - name: Build image
+        if: github.event.pull_request.merged == false
+        uses: docker/build-push-action@v3
+        with:
+          push: false
+          context: ./bridge
+
       - name: Build, tag, and push image to Amazon ECR
+        id: push_docker_image
+        if: github.event.pull_request.merged == true
         uses: docker/build-push-action@v3
         with:
           push: true
           context: ./bridge
-          tags: |
-            964246069091.dkr.ecr.us-east-1.amazonaws.com/bridge:${{ github.sha }}
+          tags: 964246069091.dkr.ecr.us-east-1.amazonaws.com/bridge:${{ github.sha }}
+
+      - name: Dispatch integration repository workflow
+        if: ${{ steps.push_docker_image.outcome == 'success' }}
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.GH_REPO_ACCESS_TOKEN }}
+          repository: exmotion-rd/tello_linetrace_integration
+          event-type: update_bridge_image
+          client-payload: '{ "tag": "${{ github.sha }}" }'
