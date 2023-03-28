@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          lfs: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
@@ -34,16 +36,9 @@ jobs:
         with:
           registry: 964246069091.dkr.ecr.us-east-1.amazonaws.com
 
-      - name: Download simulator binary
+      - name: Unzip simulator binary
         run: |
-          mkdir -p simulator/bin
-          FILE_ID=1byZo6e2xhInRC_FknhRtpQIYriqKfy_L
-          FILE_NAME=simulator/bin/TelloLineTraceAirSim.linux.bin.zip
-          curl -sc /tmp/cookie "https://drive.google.com/uc?export=download&id=${FILE_ID}" > /dev/null
-          CODE="$(awk '/_warning_/ {print $NF}' /tmp/cookie)"
-          curl -Lb /tmp/cookie "https://drive.google.com/uc?export=download&id=${FILE_ID}&confirm=t" -o ${FILE_NAME}
-          unzip -o $FILE_NAME -d simulator/bin
-          rm $FILE_NAME
+          unzip -o simulator/LinetraceWorld.zip -d simulator/bin
 
       - name: Build image
         if: github.event.pull_request.merged == false
