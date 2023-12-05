@@ -12,6 +12,10 @@ on:
       - synchronize
       - closed
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,16 +27,13 @@ jobs:
         uses: docker/setup-buildx-action@v2
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v1-node16
+        uses: aws-actions/configure-aws-credentials@v3
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: "ap-northeast-1"
+          role-to-assume: ${{ secrets.IAM_ROLE_ARN }}
 
       - name: Login to Amazon ECR
-        uses: docker/login-action@v2
-        with:
-          registry: 964246069091.dkr.ecr.us-east-1.amazonaws.com
+        uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build image
         if: github.event.pull_request.merged == false
@@ -48,7 +49,7 @@ jobs:
         with:
           push: true
           context: ./bridge
-          tags: 964246069091.dkr.ecr.us-east-1.amazonaws.com/bridge:${{ github.sha }}
+          tags: ${{ secrets.AWS_ACCOUNT }}.dkr.ecr.us-east-1.amazonaws.com/bridge:${{ github.sha }}
 
       - name: Dispatch integration repository workflow
         if: ${{ steps.push_docker_image.outcome == 'success' }}
