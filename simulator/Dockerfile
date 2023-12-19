@@ -1,64 +1,141 @@
-FROM nvidia/cudagl:11.2.2-devel-ubuntu20.04
+FROM ubuntu:18.04
 
-# This is found at
-# https://askubuntu.com/questions/909277/avoiding-user-interaction-with-tzdata-when-installing-certbot-in-a-docker-contai
-# and
-# http://p.cweiske.de/582
-#
+# Make all NVIDIA GPUS visible, but I want to manually install drivers
+ARG NVIDIA_VISIBLE_DEVICES=all
+# Supress interactive menu while installing keyboard-configuration
+ARG DEBIAN_FRONTEND=noninteractive
 
-# Allow using GUI apps.
-ENV TERM=xterm
-ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update \
- && apt-get install -y tzdata \
- && ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime \
- && dpkg-reconfigure --frontend noninteractive tzdata \
- && apt-get clean
+# Error constructing proxy for org.gnome.Terminal:/org/gnome/Terminal/Factory0: Failed to execute child process dbus-launch (No such file or directory)
+# fix by setting LANG https://askubuntu.com/questions/608330/problem-with-gnome-terminal-on-gnome-3-12-2
+# to install locales https://stackoverflow.com/questions/39760663/docker-ubuntu-bin-sh-1-locale-gen-not-found
+RUN apt-get clean && \
+    apt-get update && \
+    apt-get install -y locales && \
+    rm -rf /var/lib/apt/lists/* && \
+    locale-gen en_US.UTF-8
+ENV LANG en_US.UTF-8
+ENV LANGUAGE en_US:en
+ENV LC_ALL en_US.UTF-8
 
-# Some useful tools.
-RUN apt-get update \
- && apt-get install --no-install-recommends -y \
-        build-essential sudo \
-        cmake \
+# (1) Install Xorg and NVIDIA driver inside the container
+# Almost same procesure as nvidia/driver https://gitlab.com/nvidia/driver/blob/master/ubuntu16.04/Dockerfile
+
+# (1-1) Install prerequisites
+RUN dpkg --add-architecture i386 && \
+    apt-get update && apt-get install -y --no-install-recommends \
+        apt-utils \
+        build-essential \
+        ca-certificates \
         curl \
-        gdb \
-        git \
-        htop \
-        libsdl2-dev \
-        libsm6 libxext6 \
-        libboost-all-dev zlib1g-dev \
-        lsb-release \
-        less \
-        tmux \
-        vim \
         wget \
-        python3-pip \
-        python-tk \
- && apt-get clean
+        vim \
+        zip \
+        unzip \
+        git \
+        python \
+        kmod \
+        libc6:i386 \
+        pkg-config \
+        libelf-dev && \
+    rm -rf /var/lib/apt/lists/*
 
-ARG VULKAN_VERSION=1.2.131
+# (1-2) Install xorg server and xinit BEFORE INSTALLING NVIDIA DRIVER.
+# After this installation, command Xorg and xinit can be used in the container
+# if you need full ubuntu desktop environment, the line below should be added.
+        # ubuntu-desktop \
+RUN apt-get update && apt-get install -y \
+        xinit && \
+    rm -rf /var/lib/apt/lists/*
 
-# https://vulkan.lunarg.com/sdk/home
-# Works on both Ubuntu 20.04 (focal) and 18.04 (bionic).
-RUN wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add - && \
-    wget -qO /etc/apt/sources.list.d/lunarg-vulkan-${VULKAN_VERSION}-bionic-focal.list https://packages.lunarg.com/vulkan/${VULKAN_VERSION}/lunarg-vulkan-${VULKAN_VERSION}-bionic.list && \
-    apt update && \
-    apt install vulkan-sdk -y && \
-    apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
 
-# Copied from
-# https://github.com/carla-simulator/carla/blob/78e7ea11306ca164fb664ec74d2224f2e1d01923/Util/Docker/Release.Dockerfile#L15
-RUN VULKAN_API_VERSION=`dpkg -s libvulkan1 | grep -oP 'Version: [0-9|\.]+' | grep -oP '[0-9|\.]+'` && \
-	mkdir -p /etc/vulkan/icd.d/ && \
-	echo \
-	"{\
-		\"file_format_version\" : \"1.0.0\",\
-		\"ICD\": {\
-			\"library_path\": \"libGLX_nvidia.so.0\",\
-			\"api_version\" : \"${VULKAN_API_VERSION}\"\
-		}\
-	}" > /etc/vulkan/icd.d/nvidia_icd.json
+
+
+# (1-3) Install NVIDIA drivers, including X graphic drivers
+# Same command as nvidia/driver, except --x-{prefix,module-path,library-path,sysconfig-path} are omitted in order to make use default path and enable X drivers.
+# Driver version must be equal to host's driver
+# Install the userspace components and copy the kernel module sources.
+ENV DRIVER_VERSION=535.113.01
+RUN cd /tmp && \
+    curl -fSsl -O https://us.download.nvidia.com/XFree86/Linux-x86_64/$DRIVER_VERSION/NVIDIA-Linux-x86_64-$DRIVER_VERSION.run && \
+    sh NVIDIA-Linux-x86_64-$DRIVER_VERSION.run -x && \
+    cd NVIDIA-Linux-x86_64-$DRIVER_VERSION && \
+    ./nvidia-installer --silent \
+                       --no-kernel-module \
+                       --install-compat32-libs \
+                       --no-nouveau-check \
+                       --no-nvidia-modprobe \
+                       --no-rpms \
+                       --no-backup \
+                       --no-check-for-alternate-installs \
+                       --no-libglx-indirect \
+                    #    --no-glvnd-egl-client \
+                    #    --no-glvnd-glx-client \
+                       --no-install-libglvnd                       
+                    #    --no-install-libglvnd && \
+    # mkdir -p /usr/src/nvidia-$DRIVER_VERSION && \
+    # mv LICENSE mkprecompiled kernel /usr/src/nvidia-$DRIVER_VERSION && \
+    # sed '9,${/^\(kernel\|LICENSE\)/!d}' .manifest > /usr/src/nvidia-$DRIVER_VERSION/.manifest
+                       # this option cannot be used on newer driver
+                       # --no-glvnd-egl-client \
+                       # --no-glvnd-glx-client \
+
+# (2) Configurate Xorg
+# (2-1) Install some necessary softwares
+#
+# pkg-config: nvidia-xconfig requires this package
+# mesa-utils: This package includes glxgears and glxinfo, which is useful for testing GLX drivers
+# x11vnc: Make connection between x11 server and VNC client.
+# x11-apps: xeyes can be used to make sure that X11 server is running.
+#
+# Note: x11vnc in ubuntu18.04 is useless beacuse of stack smashing bug. See below to manual compilation.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        mesa-utils \
+        x11-apps && \
+    rm -rf /var/lib/apt/lists/*
+
+# solution for the `stack smashing detected` issue
+# https://github.com/LibVNC/x11vnc/issues/61
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        automake autoconf libssl-dev xorg-dev libvncserver-dev && \
+    rm -rf /var/lib/apt/lists/* && \
+    git clone https://github.com/LibVNC/x11vnc.git && \
+    cd x11vnc && \
+    ./autogen.sh && \
+    make && \
+    cp src/x11vnc /usr/bin/x11vnc
+
+# (2-2) Optional vulkan support
+# vulkan-utils includes vulkan-smoketest, benchmark software of vulkan API
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libvulkan1 vulkan-utils && \
+    rm -rf /var/lib/apt/lists/*
+
+# for test
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        firefox openbox && \
+    rm -rf /var/lib/apt/lists/*
+
+# sound driver and GTK library
+# If you want to use sounds on docker, try `pulseaudio --start`
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      alsa pulseaudio libgtk2.0-0 && \
+    rm -rf /var/lib/apt/lists/*
+
+# novnc
+# download websockify as well
+RUN wget https://github.com/novnc/noVNC/archive/v1.1.0.zip && \
+  unzip -q v1.1.0.zip && \
+  rm -rf v1.1.0.zip && \
+  git clone https://github.com/novnc/websockify /noVNC-1.1.0/utils/websockify
+
+# Xorg segfault error
+# dbus-core: error connecting to system bus: org.freedesktop.DBus.Error.FileNotFound (Failed to connect to socket /var/run/dbus/system_bus_socket: No such file or directory)
+# related? https://github.com/Microsoft/WSL/issues/2016
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      dbus-x11 \
+      libdbus-c++-1-0v5 && \
+    rm -rf /var/lib/apt/lists/*
+
 
 RUN groupadd -r simgroup
 RUN useradd -r -g simgroup simuser
