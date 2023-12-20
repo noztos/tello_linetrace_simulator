@@ -136,12 +136,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libdbus-c++-1-0v5 && \
     rm -rf /var/lib/apt/lists/*
 
-
 RUN groupadd -r simgroup
-RUN useradd -r -g simgroup simuser
+RUN useradd -r -g simgroup -G sudo,root simuser
+
+RUN apt update && apt install -y sudo
+RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
 COPY bin/ /home/simuser/bin/
 COPY settings.json /home/simuser/Documents/AirSim/settings.json
+COPY run.sh /home/simuser
+COPY run_headless.sh /home/simuser
 RUN chown -R simuser:simgroup /home/simuser
 
 USER simuser
