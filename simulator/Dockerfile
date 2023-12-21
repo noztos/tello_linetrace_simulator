@@ -54,7 +54,7 @@ RUN apt-get update && apt-get install -y \
 # Same command as nvidia/driver, except --x-{prefix,module-path,library-path,sysconfig-path} are omitted in order to make use default path and enable X drivers.
 # Driver version must be equal to host's driver
 # Install the userspace components and copy the kernel module sources.
-ENV DRIVER_VERSION=535.113.01
+ENV DRIVER_VERSION=535.54.03
 RUN cd /tmp && \
     curl -fSsl -O https://us.download.nvidia.com/XFree86/Linux-x86_64/$DRIVER_VERSION/NVIDIA-Linux-x86_64-$DRIVER_VERSION.run && \
     sh NVIDIA-Linux-x86_64-$DRIVER_VERSION.run -x && \
