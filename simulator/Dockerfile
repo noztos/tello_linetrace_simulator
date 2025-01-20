@@ -96,13 +96,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # solution for the `stack smashing detected` issue
 # https://github.com/LibVNC/x11vnc/issues/61
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        automake autoconf libssl-dev xorg-dev libvncserver-dev && \
-    rm -rf /var/lib/apt/lists/* && \
-    git clone https://github.com/LibVNC/x11vnc.git && \
-    cd x11vnc && \
-    ./autogen.sh && \
-    make && \
-    cp src/x11vnc /usr/bin/x11vnc
+        libssl-dev xorg-dev libvncserver-dev x11vnc && \
+    rm -rf /var/lib/apt/lists/*
 
 # (2-2) Optional vulkan support
 # vulkan-utils includes vulkan-smoketest, benchmark software of vulkan API
