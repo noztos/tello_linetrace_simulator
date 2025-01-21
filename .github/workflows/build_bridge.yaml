@@ -56,6 +56,6 @@ jobs:
         uses: peter-evans/repository-dispatch@v2
         with:
           token: ${{ secrets.GH_REPO_ACCESS_TOKEN }}
-          repository: exmotion-rd/tello_linetrace_integration
+          repository: ${{ github.repository_owner }}/tello_linetrace_integration
           event-type: update_bridge_image
           client-payload: '{ "tag": "${{ github.sha }}" }'
