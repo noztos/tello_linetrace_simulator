@@ -21,23 +21,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v3
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: "ap-northeast-1"
           role-to-assume: ${{ secrets.IAM_ROLE_ARN }}
 
       - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v1
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build image
         if: github.event.pull_request.merged == false
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v6
         with:
           push: false
           context: ./bridge
@@ -45,7 +45,7 @@ jobs:
       - name: Build, tag, and push image to Amazon ECR
         id: push_docker_image
         if: github.event.pull_request.merged == true
-        uses: docker/build-push-action@v3
+        uses: docker/build-push-action@v6
         with:
           push: true
           context: ./bridge
@@ -53,7 +53,7 @@ jobs:
 
       - name: Dispatch integration repository workflow
         if: ${{ steps.push_docker_image.outcome == 'success' }}
-        uses: peter-evans/repository-dispatch@v2
+        uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.GH_REPO_ACCESS_TOKEN }}
           repository: ${{ github.repository_owner }}/tello_linetrace_integration
